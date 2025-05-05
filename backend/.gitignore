@@ -1,0 +1,38 @@
+# -*- backend/.gitignore -*-
+# Virtualenvs
+venv/
+env/
+.venv/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# dotenv secrets
+.env
+.flaskenv
+
+# Flask instance folder
+instance/
+
+# SQLite / local DB files
+*.sqlite3
+*.db
+
+# Logs
+*.log
+
+# Coverage reports
+htmlcov/
+.coverage
+
+# pytest / tox
+.pytest_cache/
+.tox/
+
+# IDEs / editors
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
