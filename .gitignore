@@ -1,0 +1,2 @@
+# at the very top of your repo’s .gitignore
+node_modules/
