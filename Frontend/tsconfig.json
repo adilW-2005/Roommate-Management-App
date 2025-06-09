@@ -13,5 +13,5 @@
     "**/*.tsx",
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
-, "app/(tabs)/chores/addChores.jsx"  ]
+, "app/(tabs)/chores/addChores.jsx", "app/(auth)/_layout.jsx", "app/(auth)/group-select.jsx", "app/(auth)/login.jsx", "app/(auth)/register.jsx", "app/(tabs)/components/addEvent.jsx", "app/(tabs)/components/addExpense.jsx", "app/(tabs)/components/addItem.jsx", "app/(tabs)/components/ChoreModal.jsx", "app/(tabs)/roommates/[id].jsx", "app/(tabs)/user/[id].jsx", "app/(tabs)/_layout.jsx", "app/(tabs)/calendar.jsx", "app/(tabs)/expenses.jsx", "app/(tabs)/getData.jsx", "app/(tabs)/index.jsx", "app/(tabs)/inventory.jsx", "app/_layout.jsx"  ]
 }

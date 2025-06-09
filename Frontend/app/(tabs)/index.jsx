@@ -22,7 +22,7 @@ import {
   Poppins_700Bold,
 } from '@expo-google-fonts/poppins';
 import * as Notifications from 'expo-notifications';
-
+import { authAPI, groupAPI, expenseAPI, calendarAPI } from '../services/api';
 
 import logo from '../assets/logo.png';
 
@@ -56,7 +56,7 @@ export default function DashboardScreen() {
   const [groupData, setGroupData] = useState({});
   const [events, setEvents] = useState([]);
   const [expenses, setExpenses] = useState(null);
-  const [pushToken, setPushToken] = useState<string | null>(null);
+  const [pushToken, setPushToken] = useState(null);
 
   const scrollRef = useRef(null);
 
@@ -69,26 +69,38 @@ export default function DashboardScreen() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const token = await AsyncStorage.getItem('token');
-        const meRes = await fetch('http://192.168.1.6:5001/me', {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const me = await meRes.json();
+        // Get user profile
+        const profileResponse = await authAPI.getProfile();
+        if (profileResponse.error) {
+          Alert.alert('Error', 'Failed to fetch user profile');
+          return;
+        }
+        const me = profileResponse.data;
         setUser(me);
 
-        const groupRes = await fetch(`http://192.168.1.6:5001/groups/${me.group_id}/users`);
-        const group = await groupRes.json();
-        setGroupData(group);
+        // Get group data
+        const groupResponse = await groupAPI.getUsers(me.group_id);
+        if (groupResponse.error) {
+          Alert.alert('Error', 'Failed to fetch group data');
+          return;
+        }
+        setGroupData(groupResponse.data);
 
-        const eventRes = await fetch(`http://192.168.1.6:5001/calendar/group/${me.group_id}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        setEvents(await eventRes.json());
+        // Get events
+        const eventResponse = await calendarAPI.getGroupEvents(me.group_id);
+        if (eventResponse.error) {
+          console.error('Failed to fetch events:', eventResponse.error);
+        } else {
+          setEvents(eventResponse.data);
+        }
 
-        const expRes = await fetch('http://192.168.1.6:5001/expenses/me', {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        setExpenses(await expRes.json());
+        // Get expenses
+        const expenseResponse = await expenseAPI.getUserExpenses();
+        if (expenseResponse.error) {
+          console.error('Failed to fetch expenses:', expenseResponse.error);
+        } else {
+          setExpenses(expenseResponse.data);
+        }
       } catch (err) {
         console.error(err);
         Alert.alert('Error loading dashboard');
@@ -108,8 +120,6 @@ export default function DashboardScreen() {
   const nextEvent = events?.find((e) => new Date(e.date) > new Date());
   const youOwe = expenses?.total_i_owe || 0;
   const owedToYou = expenses?.total_others_owe_me || 0;
-
-
 
   async function sendRemoteTest() {
     const msg = {
@@ -133,7 +143,6 @@ export default function DashboardScreen() {
     }
   }
   
-
   if (!fontsLoaded) return null;
 
   return (
@@ -148,10 +157,6 @@ export default function DashboardScreen() {
           <Ionicons name="person-circle-outline" size={32} color="#000" />
         </TouchableOpacity>
       </LinearGradient>
-      
-  
-
-
 
       <ScrollView ref={scrollRef} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.pillsContainer}>
@@ -160,7 +165,7 @@ export default function DashboardScreen() {
               <Ionicons name="wallet-outline" size={16} color="#007AFF" />
               <Text style={styles.pillText}>Expenses</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.pill, { backgroundColor: '#FCEEDB' }]} onPress={() => router.push('/chores/getData')}>
+            <TouchableOpacity style={[styles.pill, { backgroundColor: '#FCEEDB' }]} onPress={() => router.push('/getData')}>
               <Ionicons name="checkmark-outline" size={16} color="#EF6C00" />
               <Text style={styles.pillText}>Chores</Text>
             </TouchableOpacity>
@@ -186,7 +191,7 @@ export default function DashboardScreen() {
 
         <View style={styles.gridContainer}>
           <FeatureCard title="Expenses" value={youOwe} subtitle={`Owed to You: $${owedToYou}`} icon="cash-outline" color="#E8F5E9" onPress={() => router.push('/expenses/expenses')} />
-          <FeatureCard title="Chores" subtitle={`Next: ${nextChore?.title || 'None'}`} icon="checkmark-circle-outline" color="#E3F2FD" onPress={() => router.push('/chores/getData')} />
+          <FeatureCard title="Chores" subtitle={`Next: ${nextChore?.title || 'None'}`} icon="checkmark-circle-outline" color="#E3F2FD" onPress={() => router.push('/getData')} />
         </View>
         <View style={styles.gridContainer}>
           <FeatureCard title="Calendar" subtitle={`Next: ${nextEvent?.title || 'None'}`} icon="calendar-outline" color="#F3E5F5" onPress={() => router.push('/calendar/calendar')} />
@@ -199,8 +204,6 @@ export default function DashboardScreen() {
           <Ionicons name="notifications-outline" size={20} color="#fff" />
           <Text style={styles.testButtonText}>Send Test Notification</Text>
         </TouchableOpacity>
-
-
       </ScrollView>
     </SafeAreaView>
   );

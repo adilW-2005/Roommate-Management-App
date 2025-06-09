@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -22,6 +21,7 @@ import {
   Poppins_700Bold,
 } from '@expo-google-fonts/poppins';
 import ChoreModal from './components/ChoreModal';
+import { authAPI, groupAPI, choresAPI } from '../services/api';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -31,28 +31,7 @@ const ChoreStatus = {
   UPCOMING: 'upcoming'
 };
 
-interface Chore {
-  id: string;
-  name: string;
-  due_date: string;
-  status: string;
-  icon?: string;
-}
-
-interface User {
-  id: string;
-  name: string;
-  email: string;
-  chores?: Chore[];
-}
-
-interface GroupData {
-  group_name: string;
-  invite_code: string;
-  users?: User[];
-}
-
-function WeeklyChoreView({ chores, name }: { chores: Chore[]; name: string }) {
+function WeeklyChoreView({ chores, name }) {
   const [currentWeekOffset, setCurrentWeekOffset] = useState(0);
   const today = new Date();
   
@@ -66,13 +45,34 @@ function WeeklyChoreView({ chores, name }: { chores: Chore[]; name: string }) {
     return date;
   });
 
-  const getChoreStatus = (chore: Chore, date: Date) => {
-    const choreDate = new Date(chore.due_date);
-    if (choreDate.toDateString() !== date.toDateString()) return null;
-    
-    if (chore.status === 'completed') return ChoreStatus.COMPLETE;
-    if (date < today) return ChoreStatus.INCOMPLETE;
-    return ChoreStatus.UPCOMING;
+  const getChoreStatus = (chore, date) => {
+    try {
+      // Parse the due date
+      if (!chore.due_date) return null;
+      
+      // For recurring chores with pipe format, extract just the date part
+      let dueDateStr = chore.due_date;
+      if (dueDateStr.includes('|')) {
+        dueDateStr = dueDateStr.split('|')[0];
+      }
+      
+      const choreDate = new Date(dueDateStr);
+      if (isNaN(choreDate.getTime())) return null;
+      
+      // Compare dates ignoring time
+      if (choreDate.getFullYear() !== date.getFullYear() ||
+          choreDate.getMonth() !== date.getMonth() ||
+          choreDate.getDate() !== date.getDate()) {
+        return null;
+      }
+      
+      if (chore.status === 'completed') return ChoreStatus.COMPLETE;
+      if (date < today) return ChoreStatus.INCOMPLETE;
+      return ChoreStatus.UPCOMING;
+    } catch (error) {
+      console.error("Error in getChoreStatus:", error);
+      return null;
+    }
   };
 
   const formatWeekRange = () => {
@@ -108,9 +108,9 @@ function WeeklyChoreView({ chores, name }: { chores: Chore[]; name: string }) {
       <View style={styles.choreGrid}>
         {chores && chores.length > 0 ? (
           chores.map(chore => (
-            <View key={chore.id} style={styles.choreRow}>
+            <View key={chore.id || `temp-${chore.name}-${Date.now()}`} style={styles.choreRow}>
               <View style={styles.choreIconContainer}>
-                <Ionicons name={chore.icon as any || "home-outline"} size={20} color="#6366F1" />
+                <Ionicons name={chore.icon || "home-outline"} size={20} color="#6366F1" />
               </View>
               <Text style={styles.choreName} numberOfLines={1}>
                 {chore.name}
@@ -142,8 +142,26 @@ function WeeklyChoreView({ chores, name }: { chores: Chore[]; name: string }) {
   );
 }
 
-function UserDetailModal({ visible, user, onClose }: { visible: boolean; user: User | null; onClose: () => void }) {
+function UserDetailModal({ visible, user, onClose }) {
   if (!user) return null;
+  
+  // Format date for display
+  const formatDate = (dateStr) => {
+    if (!dateStr) return "No date";
+    
+    try {
+      // Handle pipe-separated format for recurring chores
+      if (dateStr.includes('|')) {
+        dateStr = dateStr.split('|')[0];
+      }
+      
+      const date = new Date(dateStr);
+      return date.toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
+    } catch (error) {
+      console.error('Error formatting date:', error);
+      return "Invalid date";
+    }
+  };
   
   return (
     <Modal
@@ -174,7 +192,7 @@ function UserDetailModal({ visible, user, onClose }: { visible: boolean; user: U
           <ScrollView style={styles.choresList} contentContainerStyle={{paddingBottom: 20}}>
             {user.chores && user.chores.length > 0 ? (
               user.chores.map(chore => (
-                <View key={chore.id} style={styles.choreItemDetailed}>
+                <View key={chore.id || `chore-${Date.now()}-${Math.random()}`} style={styles.choreItemDetailed}>
                   <View style={[styles.choreStatusIndicator, chore.status === 'completed' ? styles.completedIndicator : styles.pendingIndicator]} />
                   <View style={styles.choreItemContent}>
                     <View style={styles.choreItemHeader}>
@@ -185,7 +203,7 @@ function UserDetailModal({ visible, user, onClose }: { visible: boolean; user: U
                     </View>
                     <View style={styles.choreMetaContainer}>
                       <Ionicons name="calendar-outline" size={14} color="#6B7280" />
-                      <Text style={styles.choreItemDate}>{new Date(chore.due_date).toLocaleDateString('en-US', {month: 'short', day: 'numeric'})}</Text>
+                      <Text style={styles.choreItemDate}>{formatDate(chore.due_date)}</Text>
                     </View>
                   </View>
                 </View>
@@ -205,20 +223,20 @@ function UserDetailModal({ visible, user, onClose }: { visible: boolean; user: U
 }
 
 export default function GroupInfoScreen() {
-  const [groupData, setGroupData] = useState<GroupData>({ group_name: '', invite_code: '' });
+  const [groupData, setGroupData] = useState({ group_name: '', invite_code: '' });
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [selectedUser, setSelectedUser] = useState(null);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   
   const [choreName, setChoreName] = useState('');
-  const [choreType, setChoreType] = useState('');
+  const [choreType, setChoreType] = useState('as_needed');
   const [repeatType, setRepeatType] = useState('');
-  const [recurringDays, setRecurringDays] = useState<string[]>([]);
+  const [recurringDays, setRecurringDays] = useState([]);
   const [customDays, setCustomDays] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [creating, setCreating] = useState(false);
-  const [groupId, setGroupId] = useState<string | null>(null);
+  const [groupId, setGroupId] = useState(null);
 
   let [fontsLoaded] = useFonts({
     Poppins_400Regular,
@@ -228,23 +246,31 @@ export default function GroupInfoScreen() {
 
   const fetchGroupInfo = async () => {
     try {
-      const token = await AsyncStorage.getItem('token');
-      if (!token) return Alert.alert('Error', 'Not logged in');
+      setLoading(true);
+      // Get user profile to get group ID
+      const profileResponse = await authAPI.getProfile();
+      if (profileResponse.error) {
+        Alert.alert('Error', 'Not logged in');
+        return;
+      }
 
-      const userRes = await fetch('http://192.168.1.6:5001/me', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      
-      if (!userRes.ok) return Alert.alert('Error', 'Failed to fetch user info');
-
-      const userData = await userRes.json();
+      const userData = profileResponse.data;
       const fetchedGroupId = userData.group_id;
       setGroupId(fetchedGroupId);
       
-      if (!fetchedGroupId) return Alert.alert('You are not in a group');
+      if (!fetchedGroupId) {
+        Alert.alert('You are not in a group');
+        return;
+      }
 
-      const groupRes = await fetch(`http://192.168.1.6:5001/groups/${fetchedGroupId}/users`);
-      const groupJson = await groupRes.json();
+      // Get group users
+      const groupResponse = await groupAPI.getUsers(fetchedGroupId);
+      if (groupResponse.error) {
+        Alert.alert('Error', 'Failed to fetch group data');
+        return;
+      }
+
+      const groupJson = groupResponse.data;
       
       // backend returns users under `chores` 
       setGroupData({
@@ -263,68 +289,123 @@ export default function GroupInfoScreen() {
   useEffect(() => {
     fetchGroupInfo();
   }, []);
+  
+  // Add an effect to refresh data when modal is closed
+  useEffect(() => {
+    // Only refresh when the modal closes (changes from visible to not visible)
+    if (!modalVisible) {
+      fetchGroupInfo();
+    }
+  }, [modalVisible]);
 
-  const toggleDay = (day: string) => {
+  const toggleDay = (day) => {
     setRecurringDays(prev =>
       prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
     );
   };
 
-  const handleUserPress = (user: User) => {
+  const handleUserPress = (user) => {
     setSelectedUser(user);
     setDetailModalVisible(true);
   };
 
   const handleCreateChore = async () => {
-    if (!choreName || !selectedUser || !dueDate || !groupId) {
-      return Alert.alert(
-        'Missing fields',
-        'Be sure to choose a roommate, name, and due date.'
-      );
-    }
-
     try {
       setCreating(true);
-      const token = await AsyncStorage.getItem('token');
-      if (!token) {
-        Alert.alert('Error', 'Not logged in');
+      
+      // Validate required fields
+      if (!choreName) {
+        Alert.alert('Error', 'Please enter a chore name');
+        setCreating(false);
         return;
       }
       
-      const res = await fetch('http://192.168.1.6:5001/chores/create', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          name: choreName,
-          group_id: groupId,
-          assigned_to: selectedUser.id,
-          type: choreType || 'as_needed',
-          repeat_type: choreType === 'recurring' ? repeatType : null,
-          recurring_days:
-            repeatType === 'weekly' ? recurringDays : null,
-          custom_days:
-            repeatType === 'custom' ? parseInt(customDays, 10) : null,
-          due_date: dueDate,
-          status: 'active',
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed');
-      Alert.alert('Success', 'Chore created');
-      setModalVisible(false);
-      // reset form
+      if (!selectedUser) {
+        Alert.alert('Error', 'Please select a user');
+        setCreating(false);
+        return;
+      }
+      
+      if (!dueDate) {
+        Alert.alert('Error', 'Please select a due date');
+        setCreating(false);
+        return;
+      }
+      
+      // Validate date format
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(dueDate)) {
+        Alert.alert('Error', 'Date must be in YYYY-MM-DD format');
+        setCreating(false);
+        return;
+      }
+
+      let final_date = dueDate;
+      if (repeatType === 'weekly') {
+        if (recurringDays.length === 0) {
+          Alert.alert('Error', 'Please select at least one day for weekly chores');
+          setCreating(false);
+          return;
+        }
+        // For weekly, we'll use the due date but note the recurring days
+        final_date = `${dueDate}|${recurringDays.join(',')}`;
+      } else if (repeatType === 'custom') {
+        if (!customDays || isNaN(parseInt(customDays))) {
+          Alert.alert('Error', 'Please enter a valid number of days for custom repeat');
+          setCreating(false);
+          return;
+        }
+        // For custom, we'll append the repeat interval to the due date
+        final_date = `${dueDate}|${customDays}`;
+      }
+
+      const choreData = {
+        name: choreName,
+        due_date: final_date,
+        assigned_to: selectedUser.id,
+        group_id: groupId,
+        repeat_type: repeatType || 'once',
+        type: choreType || 'as_needed',
+      };
+
+      console.log('Creating chore with data:', choreData);
+      const response = await choresAPI.create(choreData);
+      
+      if (response.error) {
+        throw new Error(response.error || 'Failed to create chore');
+      }
+      
+      // Clear the form
       setChoreName('');
-      setChoreType('');
+      setChoreType('as_needed');
       setRepeatType('');
       setRecurringDays([]);
       setCustomDays('');
       setDueDate('');
-      setSelectedUser(null);
-      fetchGroupInfo();
-    } catch (err: any) {
+      
+      // Show success message and close modal
+      Alert.alert(
+        'Success', 
+        response.data?.message || 'Chore created successfully',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              // Close modal and fetch data after alert is dismissed
+              setModalVisible(false);
+              setSelectedUser(null);
+              
+              // Ensure data is refreshed after UI updates
+              setTimeout(() => {
+                fetchGroupInfo();
+              }, 500);
+            }
+          }
+        ]
+      );
+      
+    } catch (err) {
+      console.error('Create chore error:', err);
       Alert.alert('Error', err.message);
     } finally {
       setCreating(false);
@@ -413,13 +494,13 @@ export default function GroupInfoScreen() {
       <TouchableOpacity
         style={styles.fab}
         onPress={() => setModalVisible(true)}
-        activeOpacity={0.9}
+        activeOpacity={0.7}
       >
         <LinearGradient
           colors={['#6366F1', '#4F46E5']}
           style={styles.fabGradient}
         >
-          <Ionicons name="add" size={28} color="#fff" />
+          <Ionicons name="add" size={32} color="#fff" />
         </LinearGradient>
       </TouchableOpacity>
 
@@ -427,6 +508,7 @@ export default function GroupInfoScreen() {
         visible={modalVisible}
         onClose={() => setModalVisible(false)}
         onSubmit={handleCreateChore}
+        users={groupData.users || []}
         selectedUser={selectedUser}
         onSelectUser={setSelectedUser}             
         choreName={choreName}
@@ -697,19 +779,20 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 24,
     right: 24,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
+    width: 56,
+    height: 156,
+    borderRadius: 28,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+    zIndex: 999,
   },
   fabGradient: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: '100%',
+    height: '100%',
+    borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
   },

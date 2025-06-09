@@ -14,77 +14,69 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
+import { groupAPI } from '../services/api';
 
-const notify = (title: string, message?: string) => {
-    if (Platform.OS === 'web') {
-      alert(`${title}${message ? `: ${message}` : ''}`);
-    } else {
-      Alert.alert(title, message);
-    }
-  };
-  
+const notify = (title, message) => {
+  if (Platform.OS === 'web') {
+    alert(`${title}${message ? `: ${message}` : ''}`);
+  } else {
+    Alert.alert(title, message);
+  }
+};
 
 const { width } = Dimensions.get('window');
 
 export default function GroupSelectScreen() {
   const [inviteCode, setInviteCode] = useState('');
   const [groupName, setGroupName] = useState('');
+  const [isJoining, setIsJoining] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
 
   const joinGroup = async () => {
-    const token = await AsyncStorage.getItem('token');
-    if (!token) return Alert.alert('Not logged in');
-
+    if (!inviteCode) {
+      return Alert.alert('Missing info', 'Please enter an invite code');
+    }
+    
     try {
-      const res = await fetch('http://127.0.0.1:5001/groups/join', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ invite_code: inviteCode }),
-      });
+      setIsJoining(true);
+      const response = await groupAPI.join(inviteCode);
 
-      const data = await res.json();
-
-      if (res.ok) {
-        notify('Joined group', data.message);
-        console.log(data)
-        router.replace('/(tabs)');
-      } else {
-        notify('Error', data.error || 'Failed to join group');
+      if (response.error) {
+        notify('Error', response.error || 'Failed to join group');
+        return;
       }
+
+      notify('Joined group', response.data.message);
+      router.replace('/(tabs)');
     } catch (err) {
       console.error(err);
       Alert.alert('Network error');
+    } finally {
+      setIsJoining(false);
     }
   };
 
   const createGroup = async () => {
-    const token = await AsyncStorage.getItem('token');
-    if (!token) return Alert.alert('Not logged in');
-
+    if (!groupName) {
+      return Alert.alert('Missing info', 'Please enter a group name');
+    }
+    
     try {
-      const res = await fetch('http://192.168.1.8:5001/groups/create', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ name: groupName }),
-      });
+      setIsCreating(true);
+      const response = await groupAPI.create(groupName);
 
-      const data = await res.json();
-
-      if (res.ok) {
-        notify('Group Created', `Invite Code: ${data.invite_code}`);
-        console.log(data)
-        router.replace('/(tabs)');
-      } else {
-        notify('Error', data.error || 'Failed to create group');
+      if (response.error) {
+        notify('Error', response.error || 'Failed to create group');
+        return;
       }
+
+      notify('Group Created', `Invite Code: ${response.data.invite_code}`);
+      router.replace('/(tabs)');
     } catch (err) {
       console.error(err);
       Alert.alert('Network error');
+    } finally {
+      setIsCreating(false);
     }
   };
 
@@ -104,8 +96,14 @@ export default function GroupSelectScreen() {
             onChangeText={setInviteCode}
             style={styles.input}
           />
-          <TouchableOpacity style={styles.button} onPress={joinGroup}>
-            <Text style={styles.buttonText}>Join Group</Text>
+          <TouchableOpacity 
+            style={styles.button} 
+            onPress={joinGroup}
+            disabled={isJoining}
+          >
+            <Text style={styles.buttonText}>
+              {isJoining ? 'Joining...' : 'Join Group'}
+            </Text>
           </TouchableOpacity>
 
           <Text style={styles.label}>Or Create a Group</Text>
@@ -115,8 +113,14 @@ export default function GroupSelectScreen() {
             onChangeText={setGroupName}
             style={styles.input}
           />
-          <TouchableOpacity style={styles.button} onPress={createGroup}>
-            <Text style={styles.buttonText}>Create Group</Text>
+          <TouchableOpacity 
+            style={styles.button} 
+            onPress={createGroup}
+            disabled={isCreating}
+          >
+            <Text style={styles.buttonText}>
+              {isCreating ? 'Creating...' : 'Create Group'}
+            </Text>
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>

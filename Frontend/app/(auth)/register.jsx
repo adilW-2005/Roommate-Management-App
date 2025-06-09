@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -10,48 +10,45 @@ import {
   Alert,
   ScrollView,
   KeyboardAvoidingView,
-  Platform,
+  Platform
 } from 'react-native';
+import { useState } from 'react';
 import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-
-
+import { authAPI } from '../services/api';
 
 const { width, height } = Dimensions.get('window');
 
-export default function LoginScreen() {
-
+export default function RegisterScreen() {
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleLogin = async () => {
-    if (!email || !password) {
-      return Alert.alert('Missing fields', 'Please enter email and password.');
+  const handleRegister = async () => {
+    if (!name || !email || !password) {
+      return Alert.alert('Missing fields', 'Please fill in all fields.');
     }
-
+    
     try {
-      const response = await fetch('http://192.168.1.6:5001/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        console.log("Login successful", data);
-        Alert.alert("Success", "Logged in!");
-        await AsyncStorage.setItem('token', data.access_token);
-        router.replace('/(tabs)');
-        // Store token here with AsyncStorage if needed
-      } else {
-        console.log("Error:", data);
-        Alert.alert("Login failed", data.error || "Something went wrong.");
+      setIsLoading(true);
+      const response = await authAPI.register(name, email, password);
+      
+      if (response.error) {
+        console.log("Error:", response.error);
+        Alert.alert("Registration failed", response.error || "Something went wrong.");
+        return;
       }
+      
+      console.log("Registration successful", response.data);
+      Alert.alert("Success", "Registered successfully!");
+      await AsyncStorage.setItem('token', response.data.access_token);
+      router.replace('/(auth)/group-select');
     } catch (error) {
       console.error("Network error:", error);
       Alert.alert("Error", "Network error occurred.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -64,7 +61,16 @@ export default function LoginScreen() {
       >
         <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
           <View style={styles.inner}>
-            <Text style={styles.title}>Roomsync Login</Text>
+            <Text style={styles.title}>Roomsync Register</Text>
+
+            <Text>Name</Text>
+            <TextInput
+              value={name}
+              style={styles.input}
+              onChangeText={setName}
+              placeholder="name"
+              autoCapitalize="none"
+            />
 
             <Text>Email</Text>
             <TextInput
@@ -85,14 +91,15 @@ export default function LoginScreen() {
               secureTextEntry
             />
 
-            <TouchableOpacity style={styles.button} onPress={handleLogin}>
-              <Text style={styles.buttonText}>Log In</Text>
+            <TouchableOpacity 
+              style={styles.button} 
+              onPress={handleRegister}
+              disabled={isLoading}
+            >
+              <Text style={styles.buttonText}>
+                {isLoading ? "Registering..." : "Register"}
+              </Text>
             </TouchableOpacity>
-            
-            <TouchableOpacity style={styles.button} onPress={() => router.replace('/(auth)/register')}>
-              <Text style={styles.buttonText}>New User? Register here</Text>
-            </TouchableOpacity>
-
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -102,7 +109,7 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   container: {
-    flexGrow: 1,
+    flex: 1,
     backgroundColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
@@ -142,6 +149,3 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 });
-
-
-

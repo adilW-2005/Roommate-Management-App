@@ -59,31 +59,46 @@ export default function ChoreModal({
 
             {/* ASSIGN USER INLINE */}
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Assign To</Text>
+              <View style={styles.labelRow}>
+                <Text style={styles.label}>Assign To</Text>
+                {selectedUser && (
+                  <View style={styles.selectedUserIndicator}>
+                    <Text style={styles.selectedUserText}>Assigned to: {selectedUser.name}</Text>
+                  </View>
+                )}
+              </View>
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
-                style={{ marginBottom: 12 }}
+                contentContainerStyle={styles.userPillsContainer}
+                style={styles.userPillsScroll}
               >
-                {users.map(u => (
-                  <TouchableOpacity
-                    key={u.id}
-                    style={[
-                      styles.userPill,
-                      selectedUser?.id === u.id && styles.userPillActive,
-                    ]}
-                    onPress={() => onSelectUser(u)}
-                  >
-                    <Text
+                {users && users.length > 0 ? (
+                  users.map(u => (
+                    <TouchableOpacity
+                      key={u.id}
                       style={[
-                        styles.userPillText,
-                        selectedUser?.id === u.id && styles.userPillTextActive,
+                        styles.userPill,
+                        selectedUser?.id === u.id && styles.userPillActive,
                       ]}
+                      onPress={() => onSelectUser(u)}
                     >
-                      {u.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                      <View style={styles.userAvatarContainer}>
+                        <Text style={styles.userAvatarText}>{u.name.charAt(0).toUpperCase()}</Text>
+                      </View>
+                      <Text
+                        style={[
+                          styles.userPillText,
+                          selectedUser?.id === u.id && styles.userPillTextActive,
+                        ]}
+                      >
+                        {u.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))
+                ) : (
+                  <Text style={styles.noUsersText}>No users available</Text>
+                )}
               </ScrollView>
             </View>
 
@@ -261,22 +276,38 @@ const styles = StyleSheet.create({
   content:{ padding:16 },
 
   // inline user pills
-  userPill:{
-    paddingVertical:6,
-    paddingHorizontal:12,
-    backgroundColor:'#F3F4F6',
-    borderRadius:20,
-    marginRight:8
+  userPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    marginRight: 8,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
-  userPillActive:{ backgroundColor:'#4F46E5' },
-  userPillText:{
-    fontFamily:'Poppins_400Regular',
-    color:'#374151'
+  userPillActive: {
+    backgroundColor: '#EEF2FF',
+    borderColor: '#4F46E5',
   },
-  userPillTextActive:{ color:'#fff' },
+  userPillText: {
+    fontFamily: 'Poppins_400Regular',
+    fontSize: 14,
+    color: '#374151',
+  },
+  userPillTextActive: {
+    fontFamily: 'Poppins_600SemiBold',
+    color: '#4F46E5',
+  },
 
   // form groups
   inputGroup:{ marginBottom:20 },
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   label:{ fontSize:14, fontFamily:'Poppins_600SemiBold', color:'#374151', marginBottom:8 },
   input:{
     borderWidth:1,
@@ -291,14 +322,28 @@ const styles = StyleSheet.create({
   // type picker
   typeButtons:{ flexDirection:'row', marginBottom:12 },
   typeButton:{
-    flex:1, padding:10, marginRight:8,
-    borderRadius:8, backgroundColor:'#F3F4F6', alignItems:'center'
+    flex:1,
+    padding:12,
+    marginRight:8,
+    borderRadius:8,
+    backgroundColor:'#F3F4F6',
+    alignItems:'center',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
-  typeButtonActive:{ backgroundColor:'#EEF2FF' },
+  typeButtonActive:{
+    backgroundColor:'#EEF2FF',
+    borderColor: '#4F46E5',
+    borderWidth: 2,
+  },
   typeButtonText:{
-    fontFamily:'Poppins_600SemiBold', fontSize:14, color:'#6B7280'
+    fontFamily:'Poppins_600SemiBold',
+    fontSize:15,
+    color:'#6B7280'
   },
-  typeButtonTextActive:{ color:'#4F46E5' },
+  typeButtonTextActive:{
+    color:'#4F46E5',
+  },
 
   // weekly days
   daysGrid:{ flexDirection:'row', flexWrap:'wrap', marginTop:8 },
@@ -330,5 +375,51 @@ const styles = StyleSheet.create({
   submitGradient:{ padding:12, alignItems:'center' },
   submitText:{
     fontFamily:'Poppins_600SemiBold', fontSize:14, color:'#fff'
+  },
+
+  // user pills container and scroll
+  userPillsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+  },
+  userPillsScroll: {
+    marginBottom: 12,
+  },
+
+  // user avatar container and text
+  userAvatarContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  userAvatarText: {
+    fontFamily: 'Poppins_600SemiBold',
+    fontSize: 16,
+    color: '#374151',
+  },
+
+  // no users text
+  noUsersText: {
+    fontFamily: 'Poppins_400Regular',
+    fontSize: 14,
+    color: '#9CA3AF',
+  },
+
+  // selected user indicator
+  selectedUserIndicator: {
+    backgroundColor: '#EEF2FF',
+    padding: 4,
+    borderRadius: 4,
+    marginLeft: 8,
+  },
+  selectedUserText: {
+    fontFamily: 'Poppins_400Regular',
+    fontSize: 12,
+    color: '#374151',
   },
 });

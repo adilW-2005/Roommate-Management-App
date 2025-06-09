@@ -23,6 +23,7 @@ import {
   Poppins_600SemiBold,
   Poppins_700Bold,
 } from '@expo-google-fonts/poppins';
+import { authAPI, expenseAPI, groupAPI } from '../services/api';
 
 import ExpenseModal from './components/addExpense';
 
@@ -48,31 +49,34 @@ export default function ExpensesHistoryScreen() {
   // load /me and group users + expense history
   const loadData = async () => {
     try {
-      const token = await AsyncStorage.getItem('token');
-      const meRes = await fetch('http://192.168.1.6:5001/me', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const me = await meRes.json();
+      // Get user profile
+      const userRes = await authAPI.getProfile();
+      if (userRes.error) {
+        Alert.alert('Error', userRes.error);
+        return;
+      }
+      
+      const me = userRes.data;
       setGroupId(me.group_id);
       setCurrentUserId(me.id);
 
       // fetch users
-      const grpRes = await fetch(
-        `http://192.168.1.6:5001/groups/${me.group_id}/users`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-      const grp = await grpRes.json();
-      setUsers(grp.chores.map(u => ({ id: u.id, name: u.name })));
+      const groupRes = await groupAPI.getUsers(me.group_id);
+      if (groupRes.error) {
+        Alert.alert('Error', 'Failed to load group users');
+        return;
+      }
+      
+      setUsers(groupRes.data.chores.map(u => ({ id: u.id, name: u.name })));
 
       // fetch history
-      const expRes = await fetch(
-        `http://192.168.1.6:5001/expenses/history/${me.group_id}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      const expJson = await expRes.json();
-      setExpenses(expJson);
+      const expensesRes = await expenseAPI.getHistory(me.group_id);
+      if (expensesRes.error) {
+        Alert.alert('Error', 'Failed to load expenses');
+        return;
+      }
+      
+      setExpenses(expensesRes.data);
     } catch (err) {
       console.error(err);
       Alert.alert('Error', 'Failed to load expenses');
@@ -86,18 +90,68 @@ export default function ExpensesHistoryScreen() {
   const handleAddExpense = async payload => {
     try {
       setCreating(true);
-      const token = await AsyncStorage.getItem('token');
-      const res = await fetch('http://192.168.1.6:5001/expense/create', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ ...payload, group_id: groupId }),
+      
+      // Validate required fields
+      if (!payload.description) {
+        Alert.alert('Error', 'Please enter a description');
+        setCreating(false);
+        return;
+      }
+      
+      if (!payload.amount || isNaN(payload.amount) || payload.amount <= 0) {
+        Alert.alert('Error', 'Please enter a valid amount');
+        setCreating(false);
+        return;
+      }
+      
+      // For custom splits, validate that amounts are provided
+      if (payload.split_type === 'custom') {
+        if (!payload.splits || payload.splits.length === 0) {
+          Alert.alert('Error', 'Please enter split amounts');
+          setCreating(false);
+          return;
+        }
+        
+        // Check if total matches amount
+        const total = payload.splits.reduce((sum, split) => sum + split.amount, 0);
+        if (Math.abs(total - payload.amount) > 0.01) {
+          Alert.alert('Warning', 'The sum of splits does not equal the total amount. Continue anyway?', [
+            {
+              text: 'Cancel',
+              style: 'cancel',
+              onPress: () => setCreating(false)
+            },
+            {
+              text: 'Continue',
+              onPress: async () => {
+                await submitExpense(payload);
+              }
+            }
+          ]);
+          return;
+        }
+      }
+      
+      await submitExpense(payload);
+    } catch (err) {
+      console.error(err);
+      Alert.alert('Error', err.message);
+      setCreating(false);
+    }
+  };
+  
+  const submitExpense = async (payload) => {
+    try {
+      const response = await expenseAPI.create({ 
+        ...payload, 
+        group_id: groupId 
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to add');
-      Alert.alert('Success', data.message);
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      
+      Alert.alert('Success', response.data?.message || 'Expense added successfully');
       setModalVisible(false);
       loadData();
     } catch (err) {
@@ -108,31 +162,24 @@ export default function ExpensesHistoryScreen() {
     }
   };
 
-  const handlePay = async (toUser, amount) => {
-    const payload = { to_user: toUser, amount, group_id: groupId };
-    console.log('→ PAY payload:', payload);
-  
+  const handlePay = async () => {
     try {
-      const token = await AsyncStorage.getItem('token');
-      const res = await fetch('http://192.168.1.6:5001/expenses/pay', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          expense_id: payExpenseId,
-          to_user:   payToUser,
-          amount:    parseFloat(payAmount),
-          group_id:  groupId
-        })
+      const response = await expenseAPI.pay({
+        expense_id: payExpenseId,
+        to_user: payToUser,
+        amount: parseFloat(payAmount),
+        group_id: groupId
       });
       
-      const json = await res.json();
-      console.log('← PAY response:', res.status, json);
-  
-      if (!res.ok) throw new Error(json.error || 'Payment failed');
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      
       Alert.alert('Success', 'Payment recorded');
+      setPayModalVisible(false);
       loadData();
     } catch (err) {
-      console.error('PAY ERR', err);
+      console.error('Payment error:', err);
       Alert.alert('Error', err.message);
     }
   };
@@ -228,8 +275,14 @@ export default function ExpensesHistoryScreen() {
       <TouchableOpacity
         style={styles.fab}
         onPress={() => setModalVisible(true)}
+        activeOpacity={0.7}
       >
-        <Ionicons name="add" size={28} color="#fff" />
+        <LinearGradient
+          colors={['#6366F1', '#4F46E5']}
+          style={styles.fabGradient}
+        >
+          <Ionicons name="add" size={32} color="#fff" />
+        </LinearGradient>
       </TouchableOpacity>
 
       <ExpenseModal
@@ -257,10 +310,7 @@ export default function ExpensesHistoryScreen() {
           <Text>Cancel</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          onPress={async () => {
-            await handlePay(payToUser, parseFloat(payAmount));
-            setPayModalVisible(false);
-          }}
+          onPress={handlePay}
           style={styles.confirmButton}
         >
           <Text style={{ color: '#fff' }}>Confirm</Text>
@@ -372,16 +422,14 @@ const styles = StyleSheet.create({
     bottom: 24,
     right: 24,
     width: 56,
-    height: 56,
+    height: 156,
     borderRadius: 28,
-    backgroundColor: '#4F46E5',
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 6,
     shadowColor: '#000',
-    shadowOpacity: 0.3,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+    zIndex: 999,
   },
   modalOverlay: {
     flex: 1,
@@ -419,6 +467,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#4F46E5',
     padding: 10,
     borderRadius: 6
-  }
-  
+  },
+  fabGradient: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
 });

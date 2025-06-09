@@ -1,4 +1,4 @@
-// RootLayout.tsx
+// RootLayout.jsx
 import { Slot, useRouter } from 'expo-router';
 import { useEffect, useState, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -6,12 +6,10 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 
 export default function RootLayout() {
-  const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
+  const [loggedIn, setLoggedIn] = useState(null);
   const router = useRouter();
-  const notificationListener = useRef<any>();
-  const responseListener = useRef<any>();
-
-
+  const notificationListener = useRef();
+  const responseListener = useRef();
 
   useEffect(() => {
     let mounted = true;

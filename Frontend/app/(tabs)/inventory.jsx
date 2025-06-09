@@ -20,6 +20,7 @@ import {
   Poppins_600SemiBold,
   Poppins_700Bold,
 } from '@expo-google-fonts/poppins';
+import { authAPI, inventoryAPI } from '../services/api';
 
 import AddItemModal from './components/addItem';
 
@@ -78,21 +79,27 @@ export default function InventoryScreen() {
   // fetch /me and inventory
   const loadInventory = async () => {
     try {
-      const token = await AsyncStorage.getItem('token');
-      const meRes = await fetch('http://127.0.0.1:5001/me', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const me = await meRes.json();
+      // Get user profile
+      const profileResponse = await authAPI.getProfile();
+      if (profileResponse.error) {
+        Alert.alert('Error', profileResponse.error);
+        return;
+      }
+      
+      const me = profileResponse.data;
       setGroupId(me.group_id);
 
-      const invRes = await fetch(
-        `http://127.0.0.1:5001/inventory/group/${me.group_id}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      const invJson = await invRes.json();
-      setItems(invJson);
+      // Get inventory items
+      const inventoryResponse = await inventoryAPI.getGroupItems(me.group_id);
+      if (inventoryResponse.error) {
+        Alert.alert('Error', 'Failed to load inventory');
+        return;
+      }
+      
+      setItems(inventoryResponse.data);
+      
       // initialize all categories collapsed
-      const groups = groupByCategory(invJson);
+      const groups = groupByCategory(inventoryResponse.data);
       const init = {};
       Object.keys(groups).forEach(cat => {
         init[cat] = false;
@@ -111,18 +118,16 @@ export default function InventoryScreen() {
   const handleAddItem = async data => {
     try {
       setCreating(true);
-      const token = await AsyncStorage.getItem('token');
-      const res = await fetch('http://127.0.0.1:5001/inventory/add', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ ...data, group_id: groupId }),
+      const response = await inventoryAPI.addItem({
+        ...data,
+        group_id: groupId
       });
-      const payload = await res.json();
-      if (!res.ok) throw new Error(payload.error || 'Failed to add');
-      Alert.alert('Success', 'Item added');
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      
+      Alert.alert('Success', response.data?.message || 'Item added successfully');
       setModalVisible(false);
       loadInventory();
     } catch (err) {
@@ -211,8 +216,14 @@ export default function InventoryScreen() {
       <TouchableOpacity
         style={styles.fab}
         onPress={() => setModalVisible(true)}
+        activeOpacity={0.7}
       >
-        <Ionicons name="add" size={28} color="#fff" />
+        <LinearGradient
+          colors={['#6366F1', '#4F46E5']}
+          style={styles.fabGradient}
+        >
+          <Ionicons name="add" size={32} color="#fff" />
+        </LinearGradient>
       </TouchableOpacity>
 
       <AddItemModal
@@ -309,15 +320,20 @@ const styles = StyleSheet.create({
     bottom: 24,
     right: 24,
     width: 56,
-    height: 56,
+    height: 156,
     borderRadius: 28,
-    backgroundColor: '#4F46E5',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+    zIndex: 999,
+  },
+  fabGradient: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 6,
-    shadowColor: '#000',
-    shadowOpacity: 0.3,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 4,
   },
 });

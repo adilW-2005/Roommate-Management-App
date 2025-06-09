@@ -28,6 +28,7 @@ import {
 } from 'date-fns';
 import { Calendar } from 'react-native-calendars';
 import { router } from 'expo-router';
+import { authAPI, calendarAPI, groupAPI } from '../services/api';
 
 import AddEventModal from './components/addEvent';
 
@@ -50,51 +51,91 @@ export default function CalendarAgendaScreen() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const token = await AsyncStorage.getItem('token');
-      const userRes = await fetch('http://192.168.1.6:5001/me', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const user = await userRes.json();
+      
+      // Get user profile
+      const userRes = await authAPI.getProfile();
+      if (userRes.error) {
+        Alert.alert('Error', userRes.error);
+        return;
+      }
+      
+      const user = userRes.data;
       setGroupId(user.group_id);
 
+      // Get group users and events
       const [groupRes, eventsRes] = await Promise.all([
-        fetch(`http://192.168.1.6:5001/groups/${user.group_id}/users`),
-        fetch(`http://192.168.1.6:5001/calendar/group/${user.group_id}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
+        groupAPI.getUsers(user.group_id),
+        calendarAPI.getGroupEvents(user.group_id)
       ]);
 
-      const group = await groupRes.json();
-      const events = await eventsRes.json();
+      if (groupRes.error) {
+        Alert.alert('Error', 'Failed to fetch group data');
+        return;
+      }
+
+      if (eventsRes.error) {
+        Alert.alert('Error', 'Failed to fetch calendar events');
+        return;
+      }
+
+      const group = groupRes.data;
+      const events = eventsRes.data;
 
       // combine chores + events
       const formatted = {};
-      group.chores
-        .flatMap(u =>
-          u.chores.map(chore => ({
-            type: 'chore',
-            name: chore.name,
-            due_date: chore.due_date,
-            assigned_to: u.name,
-          }))
-        )
-        .forEach(item => {
-          formatted[item.due_date] = formatted[item.due_date] || [];
-          formatted[item.due_date].push(item);
+      
+      // Process chores for all users
+      if (group && group.chores) {
+        group.chores.forEach(user => {
+          if (user.chores && Array.isArray(user.chores)) {
+            user.chores.forEach(chore => {
+              if (chore.due_date) {
+                // Extract base date without the pipe character
+                const baseDate = chore.due_date.split('|')[0];
+                
+                // Initialize the date entry if it doesn't exist
+                if (!formatted[baseDate]) {
+                  formatted[baseDate] = [];
+                }
+                
+                // Add to formatted items
+                formatted[baseDate].push({
+                  type: 'chore',
+                  id: chore.id,
+                  name: chore.name,
+                  due_date: chore.due_date,
+                  assigned_to: user.name,
+                  status: chore.status,
+                });
+              }
+            });
+          }
         });
+      }
 
-      events.forEach(evt => {
-        const date = evt.start_time.split('T')[0];
-        formatted[date] = formatted[date] || [];
-        formatted[date].push({
-          type: 'event',
-          name: evt.title,
-          description: evt.description,
-          is_reminder: evt.is_reminder,
-          start_time: evt.start_time,
-          end_time: evt.end_time,
+      // Process events
+      if (events && Array.isArray(events)) {
+        events.forEach(evt => {
+          if (evt.start_time) {
+            const date = evt.start_time.split('T')[0];
+            
+            // Initialize the date entry if it doesn't exist
+            if (!formatted[date]) {
+              formatted[date] = [];
+            }
+            
+            formatted[date].push({
+              type: 'event',
+              id: evt.id,
+              name: evt.title,
+              description: evt.description,
+              is_reminder: evt.is_reminder,
+              start_time: evt.start_time,
+              end_time: evt.end_time,
+            });
+          }
         });
-      });
+      }
 
       setItemsByDate(formatted);
       const todayKey = format(new Date(), 'yyyy-MM-dd');
@@ -147,18 +188,38 @@ export default function CalendarAgendaScreen() {
   const handleAddEvent = async payload => {
     try {
       setCreating(true);
-      const token = await AsyncStorage.getItem('token');
-      const res = await fetch('http://192.168.1.6:5001/calendar/create', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(payload),
+      
+      // Validate required fields
+      if (!payload.title || !payload.start_time) {
+        Alert.alert('Error', 'Title and start time are required');
+        setCreating(false);
+        return;
+      }
+      
+      // Validate ISO format for dates
+      const dateRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/;
+      if (!dateRegex.test(payload.start_time)) {
+        Alert.alert('Error', 'Start time must be in YYYY-MM-DDThh:mm:ss format');
+        setCreating(false);
+        return;
+      }
+      
+      if (payload.end_time && !dateRegex.test(payload.end_time)) {
+        Alert.alert('Error', 'End time must be in YYYY-MM-DDThh:mm:ss format');
+        setCreating(false);
+        return;
+      }
+      
+      const response = await calendarAPI.createEvent({
+        ...payload,
+        group_id: groupId
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || 'Failed to add');
-      Alert.alert('Success', json.message);
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      
+      Alert.alert('Success', response.data?.message || 'Event added successfully');
       setModalVisible(false);
       fetchData();
     } catch (err) {
@@ -501,19 +562,24 @@ export default function CalendarAgendaScreen() {
         )}
       </View>
 
-            <TouchableOpacity
+      {/* Add Event FAB */}
+      <TouchableOpacity
         style={styles.fab}
         onPress={() => setModalVisible(true)}
+        activeOpacity={0.7}
       >
-      <Ionicons name="add" size={28} color="#fff" />
+        <LinearGradient
+          colors={['#6366F1', '#4F46E5']}
+          style={styles.fabGradient}
+        >
+          <Ionicons name="add" size={32} color="#fff" />
+        </LinearGradient>
       </TouchableOpacity>
 
-      {/* your modal */}
       <AddEventModal
         visible={modalVisible}
         onClose={() => setModalVisible(false)}
         onSubmit={handleAddEvent}
-        groupId={groupId}
         creating={creating}
       />
     </SafeAreaView>
@@ -722,16 +788,18 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#4F46E5',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+    zIndex: 999,
+  },
+  fabGradient: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
-    // Android shadow
-    elevation: 6,
-    // iOS shadow
-    shadowColor: '#000',
-    shadowOpacity: 0.3,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 4,
   },
-
 });

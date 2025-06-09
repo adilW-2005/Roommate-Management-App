@@ -15,8 +15,10 @@ export default function TabLayout() {
       }}
     >
       <Tabs.Screen name="index" options={{ title: 'Home' }} />
-      <Tabs.Screen name="getData" options={{ title: 'Group' }} />
-      <Tabs.Screen name="chores" options={{ title: 'Chores' }} />
+      <Tabs.Screen name="getData" options={{ title: 'Chores' }} />
+      <Tabs.Screen name="expenses" options={{ title: 'Expenses' }} />
+      <Tabs.Screen name="calendar" options={{ title: 'Calendar' }} />
+      <Tabs.Screen name="inventory" options={{ title: 'Inventory' }} />
       <Tabs.Screen 
         name="roommates/[id]" 
         options={{
